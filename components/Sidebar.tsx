@@ -1,0 +1,80 @@
+import React from 'react';
+import { 
+  LayoutDashboard, 
+  MessageSquare, 
+  Wallet, 
+  Share2, 
+  Database, 
+  Users, 
+  Settings, 
+  LogOut,
+  Zap
+} from 'lucide-react';
+import { NavigationItem } from '../types';
+
+interface SidebarProps {
+  currentView: NavigationItem;
+  onChangeView: (view: NavigationItem) => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) => {
+  const menuItems: { id: NavigationItem; label: string; icon: React.ReactNode }[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+    { id: 'inbox', label: 'Inbox', icon: <MessageSquare size={20} /> },
+    { id: 'contacts', label: 'Contacts', icon: <Users size={20} /> },
+    { id: 'finance', label: 'Finance', icon: <Wallet size={20} /> },
+    { id: 'social', label: 'Social', icon: <Share2 size={20} /> },
+    { id: 'vault', label: 'Vault', icon: <Database size={20} /> },
+  ];
+
+  return (
+    <div className="w-64 h-screen bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 transition-all duration-300">
+      <div>
+        {/* Branding */}
+        <div className="p-6 flex items-center gap-3">
+          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20">
+            <Zap size={18} fill="currentColor" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight text-white">CreatorOS</h1>
+        </div>
+
+        {/* Main Menu */}
+        <nav className="px-3 space-y-1">
+          {menuItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onChangeView(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                currentView === item.id
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+              {item.id === 'inbox' && (
+                <span className="ml-auto bg-accent text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  12
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Bottom Actions */}
+      <div className="p-4 border-t border-slate-800 space-y-1">
+        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+          <Settings size={20} />
+          <span>Settings</span>
+        </button>
+        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors">
+          <LogOut size={20} />
+          <span>Logout</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default Sidebar;
