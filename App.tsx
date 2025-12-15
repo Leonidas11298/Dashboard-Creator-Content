@@ -8,23 +8,72 @@ import Finance from './pages/Finance';
 import Social from './pages/Social';
 import Vault from './pages/Vault';
 import Contacts from './pages/Contacts';
+import Login from './pages/Login';
 import { NavigationItem } from './types';
+import { supabase } from './src/lib/supabase';
+import { Session } from '@supabase/supabase-js';
 
 function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+
   const [currentView, setCurrentView] = useState<NavigationItem>('dashboard');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Global hotkey listener
+  // Auth & Profile Listener
+  useEffect(() => {
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchUserRole(session.user.id);
+      else setLoading(false);
+    });
+
+    // 2. Listen for changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) fetchUserRole(session.user.id);
+      else {
+        setCurrentUserRole(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchUserRole = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('team_members')
+        .select('role')
+        .eq('user_id', userId)
+        .single();
+
+      if (data) setCurrentUserRole(data.role);
+    } catch (err) {
+      console.error('Error fetching role:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setCurrentUserRole(null);
+  };
+
+  // HOTKEYS
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl + K to open Quick Add
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setIsQuickAddOpen(prev => !prev);
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
@@ -32,9 +81,16 @@ function App() {
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard key={refreshKey} onQuickAdd={() => setIsQuickAddOpen(true)} />;
+        return (
+          <Dashboard
+            key={refreshKey}
+            onQuickAdd={() => setIsQuickAddOpen(true)}
+            currentUserId={session?.user.id || null}
+            currentUserRole={currentUserRole}
+          />
+        );
       case 'inbox':
-        return <Inbox />;
+        return <Inbox currentUserId={session?.user.id || null} currentUserRole={currentUserRole} />;
       case 'finance':
         return <Finance />;
       case 'social':
@@ -42,11 +98,26 @@ function App() {
       case 'vault':
         return <Vault />;
       case 'contacts':
-        return <Contacts />;
+        return <Contacts currentUserRole={currentUserRole} />;
       default:
-        return <Dashboard key={refreshKey} onQuickAdd={() => setIsQuickAddOpen(true)} />;
+        return (
+          <Dashboard
+            key={refreshKey}
+            onQuickAdd={() => setIsQuickAddOpen(true)}
+            currentUserId={session?.user.id || null}
+            currentUserRole={currentUserRole}
+          />
+        );
     }
   };
+
+  if (loading) {
+    return <div className="h-screen bg-slate-950 flex items-center justify-center text-slate-500">Loading HQ...</div>;
+  }
+
+  if (!session) {
+    return <Login />;
+  }
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
@@ -59,6 +130,8 @@ function App() {
       <Sidebar
         currentView={currentView}
         onChangeView={setCurrentView}
+        currentUserRole={currentUserRole}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 flex flex-col min-w-0">

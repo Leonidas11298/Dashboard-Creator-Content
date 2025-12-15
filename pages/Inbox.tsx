@@ -11,6 +11,7 @@ interface Member {
     role: 'admin' | 'editor' | 'manager' | 'assistant';
     avatar_url: string;
     status: 'online' | 'busy' | 'offline';
+    user_id?: string; // Linked Auth ID
 }
 
 interface Channel {
@@ -30,8 +31,13 @@ interface Message {
     sender?: Member;
 }
 
-const Inbox = () => {
-    // Current User (Mocked as Admin for now)
+interface InboxProps {
+    currentUserId: string | null;
+    currentUserRole: string | null;
+}
+
+const Inbox = ({ currentUserId, currentUserRole }: InboxProps) => {
+    // Current User (Derived from Data + Auth)
     const [currentUser, setCurrentUser] = useState<Member | null>(null);
 
     // Data State
@@ -53,8 +59,10 @@ const Inbox = () => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Modals State
+    // Modals State
     const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
     const [isDmModalOpen, setIsDmModalOpen] = useState(false);
+    const [channelToDelete, setChannelToDelete] = useState<{ id: string; slug: string } | null>(null);
 
     // Channel Creation Inputs
     const [newChannelName, setNewChannelName] = useState('');
@@ -70,7 +78,7 @@ const Inbox = () => {
         const memberSub = supabase.channel('public:members').on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, fetchInitialData).subscribe();
 
         return () => { supabase.removeChannel(channelSub); supabase.removeChannel(memberSub); };
-    }, []);
+    }, [currentUserId]); // re-run if auth changes
 
     // Load Messages (Channel or DM)
     useEffect(() => {
@@ -90,14 +98,17 @@ const Inbox = () => {
         if (chans) setChannels(chans || []);
         if (mems) {
             setMembers(mems || []);
-            // Mock login
-            const me = (mems || []).find(m => m.role === 'admin') || (mems || [])[0];
-            if (!currentUser && me) setCurrentUser(me);
+            // Find REAL current user from DB based on Auth ID
+            if (currentUserId) {
+                const me = mems.find(m => m.user_id === currentUserId);
+                if (me) setCurrentUser(me);
+            }
         }
 
         // Default to first channel if nothing selected
         if (!activeChannelId && !activeDmUserId && chans && chans.length > 0) {
-            setActiveChannelId(chans[0].id);
+            // Keep current selection if valid, else pick first
+            setActiveChannelId(prev => prev || chans[0].id);
         }
         setLoading(false);
     };
@@ -119,6 +130,10 @@ const Inbox = () => {
 
     const fetchDmMessages = async (otherUserId: string) => {
         if (!currentUser) return;
+
+        // Mark as read immediately when opening
+        await markAsRead(otherUserId);
+
         // Fetch where (sender=me AND receiver=them) OR (sender=them AND receiver=me)
         const { data } = await supabase
             .from('team_messages')
@@ -130,6 +145,18 @@ const Inbox = () => {
             setMessages(data);
             scrollToBottom();
         }
+    };
+
+    const markAsRead = async (senderId: string) => {
+        if (!currentUser) return;
+        const { error } = await supabase
+            .from('team_messages')
+            .update({ is_read: true })
+            .eq('sender_id', senderId)
+            .eq('receiver_id', currentUser.id)
+            .eq('is_read', false);
+
+        if (error) console.error('Error marking read:', error);
     };
 
     // --- SUBSCRIPTIONS ---
@@ -166,6 +193,11 @@ const Inbox = () => {
     const handleNewMessage = (msg: Message) => {
         setMessages(prev => [...prev, msg]);
         scrollToBottom();
+
+        // If I am receiving this message and I have this DM open, mark as read
+        if (activeDmUserId && msg.sender_id === activeDmUserId && msg.receiver_id === currentUser?.id) {
+            markAsRead(msg.sender_id);
+        }
     };
 
     // --- ACTIONS ---
@@ -195,6 +227,36 @@ const Inbox = () => {
             setNewChannelDesc('');
         }
         setCreatingChannel(false);
+    };
+
+    const handleDeleteChannel = (id: string, slug: string) => {
+        setChannelToDelete({ id, slug });
+    };
+
+    const confirmDeleteChannel = async () => {
+        if (!channelToDelete) return;
+
+        try {
+            const { error, count } = await supabase
+                .from('channels')
+                .delete({ count: 'exact' })
+                .eq('id', channelToDelete.id);
+
+            if (error) {
+                console.error('Delete error:', error);
+                alert('Error deleting channel: ' + error.message);
+            } else if (count === 0) {
+                alert('Could not delete channel. You might not have permission, or it was already deleted.');
+            } else {
+                // Optimistic update
+                setChannels(prev => prev.filter(c => c.id !== channelToDelete.id));
+                if (activeChannelId === channelToDelete.id) setActiveChannelId(null);
+                setChannelToDelete(null);
+            }
+        } catch (err: any) {
+            console.error('Unexpected error:', err);
+            alert('Unexpected error: ' + err.message);
+        }
     };
 
     const handleSend = async () => {
@@ -271,6 +333,32 @@ const Inbox = () => {
     return (
         <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-slate-950 relative">
 
+            {/* Confirmation Modal */}
+            {channelToDelete && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-6 shadow-2xl relative">
+                        <h3 className="text-lg font-bold text-white mb-2">Delete Channel?</h3>
+                        <p className="text-slate-400 text-sm mb-6">
+                            Are you sure you want to delete <span className="text-white font-bold">#{channelToDelete.slug}</span>? This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setChannelToDelete(null)}
+                                className="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-lg font-medium hover:bg-slate-700 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDeleteChannel}
+                                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-lg shadow-red-900/20 transition-colors"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Create Channel Modal */}
             {isChannelModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -325,7 +413,7 @@ const Inbox = () => {
                                     <div className="relative">
                                         <img src={member.avatar_url} className="w-10 h-10 rounded-full bg-slate-800 object-cover" />
                                         <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${member.status === 'online' ? 'bg-green-500' :
-                                                member.status === 'busy' ? 'bg-red-500' : 'bg-slate-500'
+                                            member.status === 'busy' ? 'bg-red-500' : 'bg-slate-500'
                                             }`} />
                                     </div>
                                     <div className="text-left flex-1">
@@ -355,17 +443,33 @@ const Inbox = () => {
                     <div className="mb-6 px-3">
                         <h3 className="text-xs font-bold text-slate-500 uppercase px-2 mb-2 flex justify-between items-center group">
                             Channels
-                            <button onClick={() => setIsChannelModalOpen(true)} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-white transition-colors"><Plus size={14} /></button>
+                            {currentUserRole === 'admin' && (
+                                <button onClick={() => setIsChannelModalOpen(true)} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-white transition-colors"><Plus size={14} /></button>
+                            )}
                         </h3>
                         <div className="space-y-0.5">
                             {channels.map(ch => (
-                                <button
-                                    key={ch.id}
-                                    onClick={() => selectChannel(ch.id)}
-                                    className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${activeChannelId === ch.id ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'}`}
-                                >
-                                    <Hash size={14} className="opacity-50" /> {ch.slug}
-                                </button>
+                                <div key={ch.id} className="relative group/channel">
+                                    <button
+                                        onClick={() => selectChannel(ch.id)}
+                                        className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${activeChannelId === ch.id ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'}`}
+                                    >
+                                        <Hash size={14} className="opacity-50" /> {ch.slug}
+                                    </button>
+
+                                    {currentUserRole === 'admin' && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteChannel(ch.id, ch.slug);
+                                            }}
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-red-400 z-50 hover:bg-slate-900 rounded-full"
+                                            title="Delete Channel"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    )}
+                                </div>
                             ))}
                         </div>
                     </div>
@@ -383,7 +487,7 @@ const Inbox = () => {
                                     <div className="relative">
                                         <img src={member.avatar_url} className="w-5 h-5 rounded-full bg-slate-800 object-cover" />
                                         <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-slate-900 ${member.status === 'online' ? 'bg-green-500' :
-                                                member.status === 'busy' ? 'bg-red-500' : 'bg-slate-500'
+                                            member.status === 'busy' ? 'bg-red-500' : 'bg-slate-500'
                                             }`} />
                                     </div>
                                     <span>{member.name}</span>
@@ -582,7 +686,7 @@ const Inbox = () => {
                     </>
                 )}
             </div>
-        </div>
+        </div >
     );
 };
 

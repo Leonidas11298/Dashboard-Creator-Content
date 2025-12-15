@@ -1,12 +1,12 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  MessageSquare, 
-  Wallet, 
-  Share2, 
-  Database, 
-  Users, 
-  Settings, 
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Wallet,
+  Share2,
+  Database,
+  Users,
+  Settings,
   LogOut,
   Zap
 } from 'lucide-react';
@@ -15,17 +15,29 @@ import { NavigationItem } from '../types';
 interface SidebarProps {
   currentView: NavigationItem;
   onChangeView: (view: NavigationItem) => void;
+  currentUserRole?: string | null;
+  onLogout: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) => {
-  const menuItems: { id: NavigationItem; label: string; icon: React.ReactNode }[] = [
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, currentUserRole, onLogout }) => {
+  const allMenuItems: { id: NavigationItem; label: string; icon: React.ReactNode; roles?: string[] }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-    { id: 'inbox', label: 'Inbox', icon: <MessageSquare size={20} /> },
-    { id: 'contacts', label: 'Contacts', icon: <Users size={20} /> },
-    { id: 'finance', label: 'Finance', icon: <Wallet size={20} /> },
-    { id: 'social', label: 'Social', icon: <Share2 size={20} /> },
-    { id: 'vault', label: 'Vault', icon: <Database size={20} /> },
+    { id: 'inbox', label: 'Team HQ', icon: <MessageSquare size={20} /> }, // Pivot name
+    { id: 'contacts', label: 'Contacts', icon: <Users size={20} />, roles: ['admin', 'manager'] },
+    { id: 'finance', label: 'Finance', icon: <Wallet size={20} />, roles: ['admin'] },
+    { id: 'social', label: 'Social', icon: <Share2 size={20} />, roles: ['admin', 'manager', 'editor'] },
+    { id: 'vault', label: 'Vault', icon: <Database size={20} />, roles: ['admin', 'manager', 'editor'] },
   ];
+
+  // Filter items based on role (default to showing nothing or basic if role is missing/loading)
+  // If role is undefined (loading), maybe show minimal or nothing. 
+  // If role is null (not logged in?), we shouldn't be here.
+  // We'll treat 'undefined' as 'guest' for now, but App should handle that.
+  const visibleItems = allMenuItems.filter(item => {
+    if (!currentUserRole) return true; // Fallback or show all? Better show safe defaults.
+    if (!item.roles) return true; // Visible to all
+    return item.roles.includes(currentUserRole);
+  });
 
   return (
     <div className="w-64 h-screen bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 transition-all duration-300">
@@ -40,23 +52,17 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) => {
 
         {/* Main Menu */}
         <nav className="px-3 space-y-1">
-          {menuItems.map((item) => (
+          {visibleItems.map((item) => (
             <button
               key={item.id}
               onClick={() => onChangeView(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                currentView === item.id
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${currentView === item.id
                   ? 'bg-primary/10 text-primary'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
+                }`}
             >
               {item.icon}
               <span>{item.label}</span>
-              {item.id === 'inbox' && (
-                <span className="ml-auto bg-accent text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  12
-                </span>
-              )}
             </button>
           ))}
         </nav>
@@ -68,7 +74,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView }) => {
           <Settings size={20} />
           <span>Settings</span>
         </button>
-        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors">
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+        >
           <LogOut size={20} />
           <span>Logout</span>
         </button>

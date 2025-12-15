@@ -36,15 +36,19 @@ const StatCard = ({ title, value, sub, icon: Icon, colorClass }: any) => (
   </div>
 );
 
-const Dashboard = ({ onQuickAdd }: { onQuickAdd: () => void }) => {
+const Dashboard = ({ onQuickAdd, currentUserId, currentUserRole }: { onQuickAdd: () => void, currentUserId: string | null, currentUserRole: string | null }) => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     revenue: 0,
-    messages: 0,
-    fans: 0
+    unreadMessages: 0,
+    totalViews: 0
   });
+
+  // Social Stats State
+  const [socialMetrics, setSocialMetrics] = useState<any[]>([]);
+  const [activePlatformIndex, setActivePlatformIndex] = useState(0);
 
   const handleTaskComplete = async (id: string) => {
     try {
@@ -93,9 +97,43 @@ const Dashboard = ({ onQuickAdd }: { onQuickAdd: () => void }) => {
           const today = revenueData[revenueData.length - 1];
           setStats(prev => ({ ...prev, revenue: Number(today.amount) }));
         } else {
-          // Fallback mock data if DB is empty to show something
           setChartData([]);
           setStats(prev => ({ ...prev, revenue: 0 }));
+        }
+
+        // Fetch Unread Messages
+        if (currentUserId) {
+          const { data: msgs, error: msgError } = await supabase
+            .from('team_messages')
+            .select('*')
+            .eq('receiver_id', currentUserId);
+
+          if (msgError) console.error('Error fetching messages:', msgError);
+          else {
+            // Client-side filter for 'is_read' to be safe if schema update failed
+            const unreadCount = msgs.filter((m: any) => m.is_read === false || m.is_read === undefined).length;
+            setStats(prev => ({ ...prev, unreadMessages: unreadCount }));
+          }
+        }
+
+        // Fetch Social Metrics (Latest per platform)
+        const { data: metricsData, error: metricsError } = await supabase
+          .from('platform_metrics')
+          .select('*')
+          .order('date', { ascending: false })
+          .limit(50); // Fetch enough to find latest for each
+
+        if (metricsData) {
+          const latestMap = new Map();
+          metricsData.forEach((m: any) => {
+            if (!latestMap.has(m.platform)) {
+              latestMap.set(m.platform, m);
+            }
+          });
+          const latestMetrics = Array.from(latestMap.values());
+          setSocialMetrics(latestMetrics);
+          const totalV = latestMetrics.reduce((sum, m) => sum + m.views, 0);
+          setStats(prev => ({ ...prev, totalViews: totalV }));
         }
 
       } catch (error) {
@@ -106,13 +144,24 @@ const Dashboard = ({ onQuickAdd }: { onQuickAdd: () => void }) => {
     };
 
     fetchData();
-  }, []);
+  }, [currentUserId]);
+
+  // Social Carousel Helpers
+  const nextPlatform = () => {
+    setSocialMetrics(prev => {
+      if (prev.length === 0) return prev;
+      setActivePlatformIndex(curr => (curr + 1) % prev.length);
+      return prev;
+    });
+  };
+
+  const currentPlatformMetric = socialMetrics[activePlatformIndex];
 
   return (
     <div className="p-8 space-y-8 h-full overflow-y-auto pb-24">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold text-white">Good Morning, Creator.</h2>
+        <h2 className="text-3xl font-bold text-white">Good Morning, {currentUserRole === 'admin' ? 'Boss' : 'Partner'}.</h2>
         <p className="text-slate-400 mt-1">Here is what's happening in your empire today.</p>
       </div>
 
@@ -125,20 +174,59 @@ const Dashboard = ({ onQuickAdd }: { onQuickAdd: () => void }) => {
           icon={TrendingUp}
           colorClass="text-green-500"
         />
+
+        {/* Messages Card (Dynamic) */}
         <StatCard
-          title="Pending Messages"
-          value="0"
-          sub="No messages (API Pending)"
+          title="Unread DMs"
+          value={stats.unreadMessages.toString()}
+          sub={stats.unreadMessages > 0 ? "Action required" : "All caught up"}
           icon={MessageCircle}
-          colorClass="text-purple-500"
+          colorClass={stats.unreadMessages > 0 ? "text-purple-400 animate-pulse" : "text-slate-500"}
         />
-        <StatCard
-          title="New Fans"
-          value="0"
-          sub="No data (API Pending)"
-          icon={Users}
-          colorClass="text-blue-500"
-        />
+
+        {/* Social Views Card (Carousel) */}
+        <div
+          className="bg-slate-900 border border-slate-800 p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition-all cursor-pointer"
+          onClick={nextPlatform}
+        >
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-blue-500">
+            <Users size={64} />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-slate-800 bg-opacity-50">
+                <Users size={20} className="text-blue-500" />
+              </div>
+              <span className="text-slate-400 font-medium text-sm">Social Impact</span>
+            </div>
+
+            {socialMetrics.length > 0 ? (
+              <div className="animate-fade-in select-none">
+                <h3 className="text-3xl font-bold text-white tracking-tight">
+                  {currentPlatformMetric?.views.toLocaleString() || 0}
+                </h3>
+                <p className="text-sm text-blue-400 font-medium mt-1 uppercase flex items-center justify-between">
+                  <span>{currentPlatformMetric?.platform} Views</span>
+                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">Tap to cycle</span>
+                </p>
+              </div>
+            ) : (
+              <div>
+                <h3 className="text-3xl font-bold text-white tracking-tight">0</h3>
+                <p className="text-sm text-slate-500 font-medium mt-1">No data logged</p>
+              </div>
+            )}
+
+            {/* Dots indicator */}
+            {socialMetrics.length > 1 && (
+              <div className="flex gap-1 mt-3">
+                {socialMetrics.map((_, i) => (
+                  <div key={i} className={`h-1 rounded-full transition-all ${i === activePlatformIndex ? 'w-4 bg-blue-500' : 'w-1 bg-slate-700'}`} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Main Chart */}
