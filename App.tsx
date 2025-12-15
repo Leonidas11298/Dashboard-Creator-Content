@@ -13,6 +13,7 @@ import { NavigationItem } from './types';
 function App() {
   const [currentView, setCurrentView] = useState<NavigationItem>('dashboard');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Global hotkey listener
   useEffect(() => {
@@ -31,7 +32,7 @@ function App() {
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard key={refreshKey} onQuickAdd={() => setIsQuickAddOpen(true)} />;
       case 'inbox':
         return <Inbox />;
       case 'finance':
@@ -43,20 +44,21 @@ function App() {
       case 'contacts':
         return <Contacts />;
       default:
-        return <Dashboard />;
+        return <Dashboard key={refreshKey} onQuickAdd={() => setIsQuickAddOpen(true)} />;
     }
   };
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
-      <QuickAddModal 
-        isOpen={isQuickAddOpen} 
-        onClose={() => setIsQuickAddOpen(false)} 
+      <QuickAddModal
+        isOpen={isQuickAddOpen}
+        onClose={() => setIsQuickAddOpen(false)}
+        onSuccess={() => setRefreshKey(prev => prev + 1)}
       />
 
-      <Sidebar 
-        currentView={currentView} 
-        onChangeView={setCurrentView} 
+      <Sidebar
+        currentView={currentView}
+        onChangeView={setCurrentView}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
