@@ -36,7 +36,7 @@ const StatCard = ({ title, value, sub, icon: Icon, colorClass }: any) => (
   </div>
 );
 
-const Dashboard = ({ onQuickAdd, currentUserId, currentUserRole }: { onQuickAdd: () => void, currentUserId: string | null, currentUserRole: string | null }) => {
+const Dashboard = ({ onQuickAdd, currentUserId, currentUserRole, currentUserName }: { onQuickAdd: () => void, currentUserId: string | null, currentUserRole: string | null, currentUserName: string | null }) => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,7 +161,7 @@ const Dashboard = ({ onQuickAdd, currentUserId, currentUserRole }: { onQuickAdd:
     <div className="p-8 space-y-8 h-full overflow-y-auto pb-24">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold text-white">Good Morning, {currentUserRole === 'admin' ? 'Boss' : 'Partner'}.</h2>
+        <h2 className="text-3xl font-bold text-white">Buen día, {currentUserName || 'Partner'}.</h2>
         <p className="text-slate-400 mt-1">Here is what's happening in your empire today.</p>
       </div>
 

@@ -8,6 +8,7 @@ import Finance from './pages/Finance';
 import Social from './pages/Social';
 import Vault from './pages/Vault';
 import Contacts from './pages/Contacts';
+import Settings from './pages/Settings';
 import Login from './pages/Login';
 import { NavigationItem } from './types';
 import { supabase } from './src/lib/supabase';
@@ -22,43 +23,52 @@ function App() {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Profile State
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('team_members')
+        .select('role, name')
+        .eq('user_id', userId)
+        .single();
+
+      if (data) {
+        setCurrentUserRole(data.role);
+        // Get first name only
+        const firstName = data.name ? data.name.split(' ')[0] : 'Partner';
+        setCurrentUserName(firstName);
+      }
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Auth & Profile Listener
   useEffect(() => {
     // 1. Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchUserRole(session.user.id);
+      if (session) fetchUserProfile(session.user.id);
       else setLoading(false);
     });
 
     // 2. Listen for changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchUserRole(session.user.id);
+      if (session) fetchUserProfile(session.user.id);
       else {
         setCurrentUserRole(null);
+        setCurrentUserName(null);
         setLoading(false);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const fetchUserRole = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('team_members')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
-
-      if (data) setCurrentUserRole(data.role);
-    } catch (err) {
-      console.error('Error fetching role:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -87,6 +97,7 @@ function App() {
             onQuickAdd={() => setIsQuickAddOpen(true)}
             currentUserId={session?.user.id || null}
             currentUserRole={currentUserRole}
+            currentUserName={currentUserName}
           />
         );
       case 'inbox':
@@ -99,6 +110,8 @@ function App() {
         return <Vault />;
       case 'contacts':
         return <Contacts currentUserRole={currentUserRole} />;
+      case 'settings':
+        return <Settings currentUserId={session?.user.id || null} />;
       default:
         return (
           <Dashboard
@@ -106,6 +119,7 @@ function App() {
             onQuickAdd={() => setIsQuickAddOpen(true)}
             currentUserId={session?.user.id || null}
             currentUserRole={currentUserRole}
+            currentUserName={currentUserName}
           />
         );
     }

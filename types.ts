@@ -1,4 +1,4 @@
-export type NavigationItem = 'dashboard' | 'inbox' | 'finance' | 'social' | 'vault' | 'contacts';
+export type NavigationItem = 'dashboard' | 'inbox' | 'finance' | 'social' | 'vault' | 'contacts' | 'settings';
 
 export interface User {
   id: string;
